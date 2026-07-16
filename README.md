@@ -1,160 +1,127 @@
-# Pile d'observabilite moderne
+# Stack d’observabilité Prometheus et Grafana
 
-Ce projet deploie une pile locale composee de **Node Exporter**, **Prometheus** et **Grafana**. Node Exporter expose les metriques systeme, Prometheus les collecte toutes les 15 secondes et Grafana affiche un dashboard provisionne automatiquement. Une alerte Grafana se declenche lorsque le CPU depasse 80 % pendant deux minutes.
+Déploiement local d’une pile d’observabilité conteneurisée avec **Node Exporter**, **Prometheus** et **Grafana**.
+
+Node Exporter collecte les métriques système de l’environnement Linux exécuté par Docker Desktop/WSL2. Prometheus les récupère et les stocke, puis Grafana les présente dans un dashboard provisionné automatiquement. Une alerte peut envoyer une notification Discord lorsque l’utilisation du processeur dépasse 80 % pendant deux minutes.
+
+## Problématique
+
+Sans dispositif d’observabilité, l’état d’une infrastructure reste difficile à évaluer. Une saturation du processeur, un manque de mémoire, un disque presque plein ou une hausse inhabituelle du trafic réseau peuvent alors être détectés tardivement, souvent après une dégradation du service. L’absence de données historiques complique également l’analyse des incidents et l’identification de leur cause.
+
+## Solution apportée
+
+Ce projet met en place une chaîne de supervision automatisée et reproductible :
+
+- **Node Exporter** collecte les métriques système à la source ;
+- **Prometheus** centralise et historise ces données toutes les 15 secondes ;
+- **Grafana** les transforme en indicateurs lisibles dans un dashboard en temps réel ;
+- **Grafana Alerting** notifie l’équipe sur Discord lorsqu’un seuil critique est dépassé.
+
+Cette solution permet de détecter plus rapidement les anomalies, de suivre l’évolution des ressources et de disposer de données exploitables pour diagnostiquer un incident. Son déploiement avec Docker Compose garantit une installation cohérente et facilement reproductible.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    N[Node Exporter<br/>:9100] -->|metriques| P[Prometheus<br/>:9090]
-    P -->|PromQL| G[Grafana<br/>:3000]
-    G -->|alerte CPU| D[Discord]
+    N[Node Exporter] -->|Métriques système| P[Prometheus]
+    P -->|PromQL| G[Grafana]
+    G -->|Alerte CPU| D[Discord]
 ```
 
-## Prerequis
+| Composant | Fonction | Port |
+|---|---|---:|
+| Node Exporter | Collecte CPU, mémoire, disques et réseau | `9100` |
+| Prometheus | Collecte et conserve les séries temporelles | `9090` |
+| Grafana | Visualise les métriques et évalue les alertes | `3000` |
 
-- Docker Desktop demarre avec le moteur WSL2 et les conteneurs Linux
-- Docker Compose v2 ou plus recent
-- Git, uniquement pour publier le projet
+## Prérequis
 
-Verification :
+- Docker Desktop avec le moteur WSL2 ;
+- Docker Compose v2 ou supérieur.
+
+## Déploiement
+
+Créez la configuration locale à partir du modèle :
 
 ```powershell
-docker --version
-docker compose version
+Copy-Item .env.example .env
 ```
 
-## Demarrage rapide
+Renseignez dans `.env` le compte administrateur Grafana et, si nécessaire, l’URL du webhook Discord. Lancez ensuite les services :
 
-1. Creez votre configuration locale :
+```powershell
+docker compose config
+docker compose up -d
+docker compose ps
+```
 
-   ```powershell
-   Copy-Item .env.example .env
-   ```
+Les interfaces sont disponibles aux adresses suivantes :
 
-2. Modifiez `.env` et choisissez un mot de passe Grafana. Si vous avez un webhook Discord, remplacez aussi l'URL factice. Le fichier `.env` est ignore par Git.
+| Service | URL |
+|---|---|
+| Grafana | <http://localhost:3000> |
+| Prometheus | <http://localhost:9090> |
+| Cibles Prometheus | <http://localhost:9090/targets> |
+| Métriques Node Exporter | <http://localhost:9100/metrics> |
 
-3. Validez et lancez la pile :
-
-   ```powershell
-   docker compose config
-   docker compose up -d
-   docker compose ps
-   ```
-
-4. Ouvrez les interfaces :
-
-   | Service | Adresse | Verification |
-   |---|---|---|
-   | Node Exporter | <http://localhost:9100/metrics> | des metriques `node_*` sont visibles |
-   | Prometheus | <http://localhost:9090> | la requete `up` retourne `1` |
-   | Cibles Prometheus | <http://localhost:9090/targets> | les deux cibles sont `UP` |
-   | Grafana | <http://localhost:3000> | connexion avec les valeurs de `.env` |
-
-Le datasource Prometheus, le dashboard et l'alerte sont charges automatiquement. Le dashboard se trouve dans le dossier **Observabilite** de Grafana.
+Le datasource Prometheus, le dashboard et la règle d’alerte sont chargés automatiquement au démarrage.
 
 ## Dashboard
 
-Le fichier exportable [`grafana/dashboards/node-exporter-dashboard.json`](grafana/dashboards/node-exporter-dashboard.json) contient huit visualisations :
+Le dashboard fournit une vue en temps réel des indicateurs suivants :
 
-- utilisation CPU actuelle et historique ;
-- utilisation de la memoire actuelle et historique ;
-- utilisation des systemes de fichiers ;
-- duree de disponibilite ;
-- trafic reseau entrant et sortant.
+- utilisation du processeur ;
+- mémoire disponible et utilisée ;
+- occupation des systèmes de fichiers ;
+- disponibilité du système ;
+- trafic réseau entrant et sortant.
 
-Les seuils graphiques passent en orange puis en rouge lorsque les valeurs deviennent critiques. Le dashboard se rafraichit toutes les 10 secondes.
+Sa définition exportable est disponible dans [`grafana/dashboards/node-exporter-dashboard.json`](grafana/dashboards/node-exporter-dashboard.json).
 
-Les dashboards provisionnes peuvent etre modifies dans l'interface, mais Grafana ne reecrit pas automatiquement le fichier JSON monte en lecture seule. Apres une personnalisation, exportez le dashboard depuis **Dashboard settings > JSON model/Export** et remplacez le JSON du depot.
+## Alerting
 
-## Alerte CPU et Discord
-
-La regle provisionnee dans `grafana/provisioning/alerting/cpu-alert.yml` utilise cette requete :
+La règle Grafana surveille l’utilisation moyenne du processeur avec la requête PromQL suivante :
 
 ```promql
 100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])))
 ```
 
-Elle est evaluee chaque minute et passe en alerte lorsque la valeur reste superieure a 80 % pendant deux minutes. Le point de contact Discord utilise la variable `DISCORD_WEBHOOK_URL` transmise depuis `.env`.
+L’alerte est déclenchée lorsque la valeur reste supérieure à **80 % pendant deux minutes**. Le webhook Discord est injecté depuis la variable `DISCORD_WEBHOOK_URL` du fichier `.env`.
 
-Pour creer le webhook dans Discord :
-
-1. ouvrez les parametres du serveur puis **Integrations > Webhooks** ;
-2. creez un webhook et copiez son URL ;
-3. placez l'URL dans `.env` sans la publier ;
-4. recreez Grafana pour charger la nouvelle valeur :
-
-   ```powershell
-   docker compose up -d --force-recreate grafana
-   ```
-
-5. dans Grafana, ouvrez **Alerting > Contact points > Discord**, puis lancez un test.
-
-Pour tester la regle sans charger fortement la machine, remplacez temporairement le seuil `80` par `1` dans `cpu-alert.yml`, recreez Grafana, attendez quelques minutes, puis remettez `80`.
-
-> L'URL d'un webhook est un secret. Ne commitez jamais `.env`, une capture affichant cette URL ou un export Grafana qui la contient.
-
-## Commandes utiles
-
-Afficher l'etat et les journaux :
+Après modification du webhook, recréez le conteneur Grafana :
 
 ```powershell
-docker compose ps
-docker compose logs --tail 100 prometheus
-docker compose logs --tail 100 node-exporter
-docker compose logs --tail 100 grafana
+docker compose up -d --force-recreate grafana
 ```
 
-Arreter sans perdre les donnees :
+> Le fichier `.env` contient des informations sensibles et ne doit jamais être ajouté au dépôt.
+
+## Structure
+
+```text
+.
+├── docker-compose.yml
+├── prometheus/
+│   └── prometheus.yml
+├── grafana/
+│   ├── dashboards/
+│   │   └── node-exporter-dashboard.json
+│   └── provisioning/
+│       ├── alerting/cpu-alert.yml
+│       ├── dashboards/dashboards.yml
+│       └── datasources/prometheus.yml
+├── .env.example
+└── README.md
+```
+
+## Arrêt des services
 
 ```powershell
 docker compose down
 ```
 
-Arreter et supprimer les donnees locales :
+Les volumes Docker conservent les données de Prometheus et Grafana entre deux démarrages.
 
-```powershell
-docker compose down -v
-```
+## Périmètre sous Windows
 
-Recharger `prometheus.yml` apres une modification :
-
-```powershell
-Invoke-WebRequest -Method Post http://localhost:9090/-/reload
-```
-
-## Structure du depot
-
-```text
-.
-|-- docker-compose.yml
-|-- prometheus/
-|   `-- prometheus.yml
-|-- grafana/
-|   |-- dashboards/
-|   |   `-- node-exporter-dashboard.json
-|   `-- provisioning/
-|       |-- alerting/cpu-alert.yml
-|       |-- dashboards/dashboards.yml
-|       `-- datasources/prometheus.yml
-|-- .env.example
-|-- .gitignore
-`-- README.md
-```
-
-## Particularite de Windows
-
-Node Exporter est un outil Linux. Avec Docker Desktop sous Windows, les montages `/proc`, `/sys` et `/` exposent l'environnement Linux de Docker/WSL2. Le dashboard mesure donc cette machine virtuelle Linux, et non tous les compteurs natifs de Windows.
-
-Pour superviser reellement l'hote Windows, il faudrait installer **Windows Exporter** sur Windows puis ajouter `host.docker.internal:9182` aux cibles Prometheus. Ce serait une variante du projet demande, qui exige explicitement Node Exporter.
-
-## Publication GitHub
-
-Avant de publier, verifiez qu'aucun secret n'est suivi :
-
-```powershell
-git status
-git check-ignore .env
-```
-
-Les livrables principaux sont `docker-compose.yml`, `prometheus/prometheus.yml` et le JSON du dashboard. Les fichiers de provisioning rendent en plus le projet completement reproductible.
+Node Exporter est conçu pour Linux. Sous Docker Desktop, les métriques présentées proviennent donc de l’environnement Linux Docker/WSL2 et non de l’ensemble des compteurs natifs de Windows. La supervision native de Windows nécessiterait **Windows Exporter**.
