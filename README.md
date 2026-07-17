@@ -4,6 +4,10 @@ Déploiement local d’une pile d’observabilité conteneurisée avec **Node Ex
 
 Node Exporter collecte les métriques système de l’environnement Linux exécuté par Docker Desktop/WSL2. Prometheus les récupère et les stocke, puis Grafana les présente dans un dashboard provisionné automatiquement. Une alerte peut envoyer une notification Discord lorsque l’utilisation du processeur dépasse 80 % pendant deux minutes.
 
+## Apercu Dashboard Grafana
+
+![Apercu ashboard Grafana](images/Grafana.png)
+
 ## Problématique
 
 Sans dispositif d’observabilité, l’état d’une infrastructure reste difficile à évaluer. Une saturation du processeur, un manque de mémoire, un disque presque plein ou une hausse inhabituelle du trafic réseau peuvent alors être détectés tardivement, souvent après une dégradation du service. L’absence de données historiques complique également l’analyse des incidents et l’identification de leur cause.
@@ -94,25 +98,17 @@ Après modification du webhook, recréez le conteneur Grafana :
 docker compose up -d --force-recreate grafana
 ```
 
-> Le fichier `.env` contient des informations sensibles et ne doit jamais être ajouté au dépôt.
+## Fichiers principaux
 
-## Structure
-
-```text
-.
-├── docker-compose.yml
-├── prometheus/
-│   └── prometheus.yml
-├── grafana/
-│   ├── dashboards/
-│   │   └── node-exporter-dashboard.json
-│   └── provisioning/
-│       ├── alerting/cpu-alert.yml
-│       ├── dashboards/dashboards.yml
-│       └── datasources/prometheus.yml
-├── .env.example
-└── README.md
-```
+| Fichier | Rôle |
+|---|---|
+| `docker-compose.yml` | Démarre les trois conteneurs et monte leur configuration. |
+| `prometheus/prometheus.yml` | Indique à Prometheus où récupérer les métriques. |
+| `grafana/provisioning/datasources/datasource.yml` | Connecte automatiquement Grafana à Prometheus. |
+| `grafana/provisioning/dashboards/dashboards.yml` | Demande à Grafana de charger le dashboard JSON. |
+| `grafana/dashboards/node-exporter-dashboard.json` | Définit les panneaux et leurs requêtes PromQL. |
+| `grafana/provisioning/alerting/cpu-alert.yml` | Définit le seuil CPU et la notification Discord. |
+| `.env.example` | Présente les variables à renseigner sans exposer les secrets. |
 
 ## Arrêt des services
 
@@ -122,6 +118,6 @@ docker compose down
 
 Les volumes Docker conservent les données de Prometheus et Grafana entre deux démarrages.
 
-## Périmètre sous Windows
+## Licence
 
-Node Exporter est conçu pour Linux. Sous Docker Desktop, les métriques présentées proviennent donc de l’environnement Linux Docker/WSL2 et non de l’ensemble des compteurs natifs de Windows. La supervision native de Windows nécessiterait **Windows Exporter**.
+Ce projet est sous licence **MIT** — voir le fichier [LICENSE](LICENSE) pour plus de détails.

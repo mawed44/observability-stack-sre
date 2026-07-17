@@ -1,66 +1,62 @@
 services:
+  # Collecte les métriques CPU, mémoire, disque et réseau de Linux/WSL2.
   node-exporter:
     image: quay.io/prometheus/node-exporter:v1.11.1
     container_name: observability-node-exporter
+    restart: unless-stopped
+    pid: host
     command:
+      # Ces chemins permettent de lire les informations de la machine Linux hôte.
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
       - --path.rootfs=/rootfs
-      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($|/)
-    pid: host
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:9100:9100"
+      # Ignore les systèmes de fichiers techniques inutiles dans le dashboard.
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+)($|/)
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
-    networks:
-      - observability
+    ports:
+      - "127.0.0.1:9100:9100"
 
+  # Récupère les métriques de Node Exporter et les conserve dans une base temporelle.
   prometheus:
     image: prom/prometheus:v3.11.0
     container_name: observability-prometheus
-    command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=15d
-      - --web.enable-lifecycle
     restart: unless-stopped
+    volumes:
+      # Configuration de la cible à surveiller.
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Volume persistant pour conserver les métriques après un redémarrage.
+      - prometheus-data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus-data:/prometheus
     depends_on:
       - node-exporter
-    networks:
-      - observability
 
+  # Affiche les métriques et envoie les alertes Discord.
   grafana:
     image: grafana/grafana:13.1.0
     container_name: observability-grafana
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
+      # Empêche la création libre de comptes sur Grafana.
       GF_USERS_ALLOW_SIGN_UP: "false"
-      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-https://discord.com/api/webhooks/replace-me}
     volumes:
+      # Conserve les utilisateurs et les paramètres Grafana.
       - grafana-data:/var/lib/grafana
+      # Charge automatiquement le datasource, le dashboard et l’alerte.
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
     depends_on:
       - prometheus
-    networks:
-      - observability
 
+# Les volumes évitent de perdre les données à chaque arrêt des conteneurs.
 volumes:
   prometheus-data:
   grafana-data:
-
-networks:
-  observability:
-    name: observability

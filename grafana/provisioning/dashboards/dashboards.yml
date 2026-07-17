@@ -1,14 +1,10 @@
+# Ce provider demande à Grafana de charger les dashboards du dossier monté.
 apiVersion: 1
 
 providers:
-  - name: Observabilite
-    orgId: 1
-    folder: Observabilite
+  - name: Observabilité
+    folder: Observabilité
     folderUid: observabilite
     type: file
-    disableDeletion: false
-    allowUiUpdates: true
-    updateIntervalSeconds: 30
     options:
       path: /var/lib/grafana/dashboards
-      foldersFromFilesStructure: false
