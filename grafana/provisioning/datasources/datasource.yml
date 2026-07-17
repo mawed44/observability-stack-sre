@@ -1,12 +1,11 @@
+# Ce fichier connecte automatiquement Grafana à Prometheus.
 apiVersion: 1
 
 datasources:
   - name: Prometheus
     type: prometheus
+    # Cet UID stable est utilisé par le dashboard et la règle d’alerte.
     uid: prometheus
-    access: proxy
+    # Adresse interne Docker : localhost désignerait le conteneur Grafana.
     url: http://prometheus:9090
     isDefault: true
-    editable: false
-    jsonData:
-      timeInterval: 15s

@@ -1,15 +1,17 @@
+# Grafana charge cette règle et le contact Discord au démarrage.
 apiVersion: 1
 
 groups:
   - orgId: 1
     name: Infrastructure
-    folder: Observabilite
+    folder: Alertes
     interval: 1m
     rules:
       - uid: cpu_usage_high
-        title: Utilisation CPU elevee
+        title: Utilisation élevée du CPU
         condition: C
         data:
+          # A : demande à Prometheus le pourcentage moyen de CPU utilisé.
           - refId: A
             datasourceUid: prometheus
             relativeTimeRange:
@@ -22,11 +24,12 @@ groups:
               editorMode: code
               expr: '100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])))'
               instant: true
-              intervalMs: 15000
-              legendFormat: CPU
-              maxDataPoints: 43200
               range: false
+              intervalMs: 15000
+              maxDataPoints: 43200
               refId: A
+
+          # B : transforme la série A en une seule valeur, la plus récente.
           - refId: B
             datasourceUid: __expr__
             relativeTimeRange:
@@ -40,8 +43,7 @@ groups:
                   operator:
                     type: and
                   query:
-                    params:
-                      - B
+                    params: [B]
                   reducer:
                     params: []
                     type: last
@@ -53,6 +55,8 @@ groups:
               reducer: last
               refId: B
               type: reduce
+
+          # C : vérifie si la valeur B dépasse le seuil de 80 %.
           - refId: C
             datasourceUid: __expr__
             relativeTimeRange:
@@ -61,14 +65,12 @@ groups:
             model:
               conditions:
                 - evaluator:
-                    params:
-                      - 80
+                    params: [80]
                     type: gt
                   operator:
                     type: and
                   query:
-                    params:
-                      - C
+                    params: [C]
                   reducer:
                     params: []
                     type: last
@@ -79,14 +81,17 @@ groups:
               expression: B
               refId: C
               type: threshold
+
+        # Associe l’alerte à la jauge CPU du dashboard.
         dashboardUid: node-exporter-modern
         panelId: 1
         noDataState: NoData
         execErrState: Error
+        # Le dépassement doit durer deux minutes avant la notification.
         for: 2m
         annotations:
-          description: Le processeur depasse 80 % depuis au moins 2 minutes.
-          summary: Utilisation CPU elevee sur Node Exporter
+          description: L’utilisation du processeur dépasse 80 % depuis au moins 2 minutes.
+          summary: Utilisation élevée du CPU sur Node Exporter
         labels:
           severity: warning
           service: node-exporter
@@ -100,14 +105,10 @@ contactPoints:
         disableResolveMessage: false
         settings:
           url: $DISCORD_WEBHOOK_URL
-          use_discord_username: false
 
+# Toutes les alertes sont envoyées vers le contact Discord ci-dessus.
 policies:
   - orgId: 1
     receiver: Discord
-    group_by:
-      - alertname
-      - service
+    group_by: [alertname, service]
     group_wait: 10s
-    group_interval: 5m
-    repeat_interval: 4h
